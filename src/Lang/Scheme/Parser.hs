@@ -2,6 +2,7 @@ module Lang.Scheme.Parser (
   expr
 ) where
 
+import Control.Monad (void)
 import Text.Parsec
 
 import Lang.Scheme.AST
@@ -12,7 +13,7 @@ type Parser = Parsec String ()
 --
 -- Note: the boolean literal case is handled by 'atom'.
 expr :: Parser Expr
-expr = choice [atom, list, stringLit, numberLit]
+expr = choice [atom, list, stringLit, charLit, numberLit] <?> "expression"
 
 -- | Parse an atom.
 --
@@ -22,9 +23,12 @@ expr = choice [atom, list, stringLit, numberLit]
 -- Some special constant literals must be handled here like the booleans @#t@ and @#f@.
 atom :: Parser Expr
 atom = do
-  h <- letter <|> symbol
-  t <- many (letter <|> symbol <|> digit)
-  let a = h:t
+  a <- try $ do
+         h <- letter <|> symbol
+         t <- many (letter <|> symbol <|> digit)
+         lookAhead delimeter
+         return (h:t)
+  -- TODO: Keywords
   return $ case a of
              "#t" -> BoolLit True
              "#f" -> BoolLit False
@@ -42,18 +46,54 @@ list = List <$> between (char '(') (char ')') (sepBy expr spaces1)
 -- quotes.
 stringLit :: Parser Expr
 stringLit = do
-  s <- between quote quote (many notUnescapedQuote)
+  s <- between quote quote (many strChar)
   return $ StringLit s
 
   where
 
-  notUnescapedQuote =  noneOf "\\\""
-                   <|> (char '\\' >> quote)
+  strChar =  noneOf "\\\""
+         <|> esc quote
+         <|> esc (char 'n')
+         <|> esc (char 'r')
+         <|> esc (char 't')
+         <|> esc (char '\\')
+         <?> "valid string character"
+
+-- | Parse a character literal.
+--
+-- Examples: #\a       --> 'a'
+--           #\Z       --> 'Z'
+--           #\        --> ' '
+--           #\space   --> ' '
+--           #\newline --> '\n'
+--
+charLit :: Parser Expr
+charLit = do
+  _ <- string "#\\"
+  delimeterCase <|> letterCase <|> nameCase <?> "character literal"
+  where
+  delimeterCase = lookAhead delimeter >> return (CharLit ' ')
+  letterCase    = try $ do
+    c <- letter
+    lookAhead delimeter
+    return (CharLit c)
+  nameCase      = try $ do
+    h <- letter
+    t <- many1 letter
+    lookAhead delimeter
+    let name = h:t
+    r <- case name of
+           "space"   -> return (CharLit ' ')
+           "newline" -> return (CharLit '\n')
+           _         -> unexpected ("character literal name: " ++ name)
+    return r
 
 -- | Parse an integer.
 --
 -- This is done by parsing a non-empty sequence of digits and then calling
 -- Haskell's 'read' at the 'Integer' type.
+--
+-- TODO: support different bases
 numberLit :: Parser Expr
 numberLit = do
   numStr <- many1 digit
@@ -73,3 +113,9 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 quote :: Parser Char
 quote = char '"'
+
+delimeter :: Parser ()
+delimeter = void (oneOf " ()") <|> eof
+
+esc :: Parser Char -> Parser Char
+esc p = char '\\' >> p

@@ -7,5 +7,6 @@ data Expr = Atom String        -- ^ string names the atom
           | List [Expr]        -- ^ list of expressions
           | NumberLit Integer  -- ^ an integer literal
           | StringLit String   -- ^ a string literal
+          | CharLit Char       -- ^ a character literal
           | BoolLit Bool       -- ^ a boolean literal
   deriving (Eq, Show)
