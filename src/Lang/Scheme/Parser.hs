@@ -3,17 +3,26 @@ module Lang.Scheme.Parser (
 ) where
 
 import Control.Monad (void)
+import Data.Text (Text)
 import Text.Parsec
 
 import Lang.Scheme.AST
 
-type Parser = Parsec String ()
+type Parser = Parsec Text ()
 
 -- | Parse a scheme expression.
 --
 -- Note: the boolean literal case is handled by 'atom'.
 expr :: Parser Expr
-expr = choice [atom, list, stringLit, charLit, numberLit] <?> "expression"
+expr = choice [ atom
+              , list
+              , quoted
+              , quasiquoted
+              , unquoted
+              , stringLit
+              , charLit
+              , numberLit]
+       <?> "expression"
 
 -- | Parse an atom.
 --
@@ -106,6 +115,38 @@ spaces1 = skipMany1 space
 -- | Parse a valid symbol.
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
+
+-- | Parse a quoted expression.
+quoted :: Parser Expr
+quoted = do
+  char '\''
+  e <- expr
+  return (wrapExpr "quote" e)
+
+-- | Parse a quasiquoted expression.
+quasiquoted :: Parser Expr
+quasiquoted = do
+  char '`'
+  e <- expr
+  return (wrapExpr "quasiquote" e)
+
+-- | Parse an unquote/unquote-splice expression.
+unquoted :: Parser Expr
+unquoted = do
+  char ','
+  -- TODO: order of these is fragile
+  spliceCase <|> unquoteCase
+  where
+  unquoteCase = do
+    e <- expr
+    return (wrapExpr "unquote" e)
+  spliceCase = do
+    char '@'
+    e <- expr
+    return (wrapExpr "unquote-splicing" e)
+
+wrapExpr :: String -> Expr -> Expr
+wrapExpr ident e = List [Atom ident, e]
 
 
 -- Helpers ---------------------------------------------------------------------
