@@ -14,6 +14,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Lang.Scheme
                      , Lang.Scheme.AST
+                     , Lang.Scheme.Eval
                      , Lang.Scheme.Parser
                      , Lang.Scheme.Printer
                      , Lang.Scheme.REPL
